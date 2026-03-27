@@ -10,7 +10,7 @@ def main():
     if len(sys.argv) > 1:
         topic = " ".join(sys.argv[1:])
     else:
-        topic = input("Enter a news topic to analyze: ").strip()
+        topic = input("🧐 Enter a news topic to analyze: ").strip()
 
     if not topic:
         print("No topic provided. Exiting.")
