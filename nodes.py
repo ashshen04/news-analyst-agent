@@ -1,8 +1,10 @@
 """Node definitions for the news analyst agent graph."""
 
 import os
+import time
 
 from dotenv import load_dotenv
+from groq import RateLimitError
 from langchain_groq import ChatGroq
 
 from state import AgentState
@@ -14,6 +16,21 @@ llm = ChatGroq(
     model="qwen/qwen3-32b",
     api_key=os.getenv("GROQ_API_KEY"),
 )
+
+
+def invoke_with_retry(prompt: str, max_retries: int = 3, wait: float = 10.0) -> str:
+    """Invoke the LLM with retry on rate limit errors."""
+    for attempt in range(max_retries):
+        try:
+            response = llm.invoke(prompt)
+            return response.content
+        except RateLimitError:
+            if attempt < max_retries - 1:
+                print(f"  Rate limited, waiting {wait}s before retry...")
+                time.sleep(wait)
+            else:
+                raise
+    return ""
 
 
 def fetch_news(state: AgentState) -> dict:
@@ -31,27 +48,30 @@ def analyze_news(state: AgentState) -> dict:
         f"[{item['source']}] {item['title']}\n{item['content']}"
         for item in state["news_items"]
     )
-    response = llm.invoke(
+    result = invoke_with_retry(
         f"Below are news articles about \"{state['topic']}\".\n\n"
         f"{news_text}\n\n"
         "Analyze these articles. Identify the different stances, "
-        "key viewpoints, and major themes across sources."
+        "key viewpoints, and major themes across sources.\n\n"
+        "Respond in both English and Simplified Chinese (English first, then Chinese).\n"
+        "Use bullet points for stances and viewpoints. Use short paragraphs only for context."
     )
-    return {"analysis": response.content}
+    return {"analysis": result}
 
 
 def find_conflicts(state: AgentState) -> dict:
     """Identify contradictions between different sources."""
-    response = llm.invoke(
+    result = invoke_with_retry(
         f"Below is an analysis of news articles about \"{state['topic']}\":\n\n"
         f"{state['analysis']}\n\n"
         "Identify specific contradictions or conflicting claims between "
         "different sources. Return each contradiction as a separate item. "
-        "Be concise — one sentence per contradiction."
+        "Be concise — one sentence per contradiction.\n\n"
+        "Respond in both English and Simplified Chinese (English first, then Chinese)."
     )
     conflicts = [
         line.lstrip("•-0123456789. ")
-        for line in response.content.strip().splitlines()
+        for line in result.strip().splitlines()
         if line.strip()
     ]
     return {"conflicts": conflicts}
@@ -60,7 +80,7 @@ def find_conflicts(state: AgentState) -> dict:
 def generate_report(state: AgentState) -> dict:
     """Generate a structured final report."""
     conflicts_text = "\n".join(f"- {c}" for c in state["conflicts"])
-    response = llm.invoke(
+    result = invoke_with_retry(
         f"Topic: {state['topic']}\n\n"
         f"Analysis:\n{state['analysis']}\n\n"
         f"Contradictions found:\n{conflicts_text}\n\n"
@@ -68,6 +88,8 @@ def generate_report(state: AgentState) -> dict:
         "1. Executive Summary\n"
         "2. Key Findings\n"
         "3. Conflicting Information\n"
-        "4. Conclusion"
+        "4. Conclusion\n\n"
+        "Respond in both English and Simplified Chinese (English first, then Chinese).\n"
+        "Use bullet points as the primary format. Use short paragraphs only for summaries and conclusions."
     )
-    return {"final_report": response.content}
+    return {"final_report": result}
