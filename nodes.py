@@ -1,7 +1,7 @@
 """Node definitions for the news analyst agent graph."""
 
 import os
-import time
+from datetime import date
 
 from dotenv import load_dotenv
 from groq import RateLimitError
@@ -13,7 +13,7 @@ from tools import search_news
 load_dotenv()
 
 llm = ChatGroq(
-    model="qwen/qwen3-32b",
+    model="moonshotai/kimi-k2-instruct",
     api_key=os.getenv("GROQ_API_KEY"),
 )
 
@@ -84,12 +84,12 @@ def generate_report(state: AgentState) -> dict:
         f"Topic: {state['topic']}\n\n"
         f"Analysis:\n{state['analysis']}\n\n"
         f"Contradictions found:\n{conflicts_text}\n\n"
+        f"Today's date: {date.today().isoformat()}\n\n"
         "Based on the above, generate a structured report with these sections:\n"
         "1. Executive Summary\n"
         "2. Key Findings\n"
         "3. Conflicting Information\n"
         "4. Conclusion\n\n"
-        "Respond in both English and Simplified Chinese (English first, then Chinese).\n"
-        "Use bullet points as the primary format. Use short paragraphs only for summaries and conclusions."
+        "Include the report date and note the recency of the news sources."
     )
     return {"final_report": result}
