@@ -1,6 +1,7 @@
 """Node definitions for the news analyst agent graph."""
 
 import os
+import time
 from datetime import date
 
 from dotenv import load_dotenv
