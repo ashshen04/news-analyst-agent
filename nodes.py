@@ -14,7 +14,7 @@ from tools import search_news
 load_dotenv()
 
 llm = ChatGroq(
-    model="moonshotai/kimi-k2-instruct",
+    model="openai/gpt-oss-120b",
     api_key=os.getenv("GROQ_API_KEY"),
 )
 
@@ -50,12 +50,13 @@ def analyze_news(state: AgentState) -> dict:
         for item in state["news_items"]
     )
     result = invoke_with_retry(
+        "IMPORTANT: You MUST respond in both English AND Simplified Chinese (简体中文). "
+        "Write the English version first, then write '---', then the same content in Chinese.\n"
+        "Use bullet points for stances and viewpoints. Use short paragraphs only for context.\n\n"
         f"Below are news articles about \"{state['topic']}\".\n\n"
         f"{news_text}\n\n"
         "Analyze these articles. Identify the different stances, "
-        "key viewpoints, and major themes across sources.\n\n"
-        "Respond in both English and Simplified Chinese (English first, then Chinese).\n"
-        "Use bullet points for stances and viewpoints. Use short paragraphs only for context."
+        "key viewpoints, and major themes across sources."
     )
     return {"analysis": result}
 
@@ -63,12 +64,13 @@ def analyze_news(state: AgentState) -> dict:
 def find_conflicts(state: AgentState) -> dict:
     """Identify contradictions between different sources."""
     result = invoke_with_retry(
+        "IMPORTANT: You MUST respond in both English AND Simplified Chinese (简体中文). "
+        "Write the English version first, then write '---', then the same content in Chinese.\n\n"
         f"Below is an analysis of news articles about \"{state['topic']}\":\n\n"
         f"{state['analysis']}\n\n"
         "Identify specific contradictions or conflicting claims between "
         "different sources. Return each contradiction as a separate item. "
-        "Be concise — one sentence per contradiction.\n\n"
-        "Respond in both English and Simplified Chinese (English first, then Chinese)."
+        "Be concise — one sentence per contradiction."
     )
     conflicts = [
         line.lstrip("•-0123456789. ")
@@ -82,6 +84,9 @@ def generate_report(state: AgentState) -> dict:
     """Generate a structured final report."""
     conflicts_text = "\n".join(f"- {c}" for c in state["conflicts"])
     result = invoke_with_retry(
+        "IMPORTANT: You MUST respond in both English AND Simplified Chinese (简体中文). "
+        "Write the English version first, then write '---', then the same content in Chinese.\n"
+        "Use bullet points as the primary format. Use short paragraphs only for summaries and conclusions.\n\n"
         f"Topic: {state['topic']}\n\n"
         f"Analysis:\n{state['analysis']}\n\n"
         f"Contradictions found:\n{conflicts_text}\n\n"
