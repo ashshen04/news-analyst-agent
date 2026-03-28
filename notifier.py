@@ -9,15 +9,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def send_email(subject: str, body: str, to_addresses: str | list[str]) -> None:
-    """Send an email via Gmail SMTP. Accepts a single address or a list."""
+def send_email(subject: str, html_body: str, to_addresses: str | list[str]) -> None:
+    """Send an HTML email via Gmail SMTP. Accepts a single address or a list."""
     gmail_address = os.getenv("GMAIL_ADDRESS")
     gmail_password = os.getenv("GMAIL_APP_PASSWORD")
 
     if isinstance(to_addresses, str):
         to_addresses = [to_addresses]
 
-    msg = MIMEText(body, "plain", "utf-8")
+    msg = MIMEText(html_body, "html", "utf-8")
     msg["Subject"] = subject
     msg["From"] = gmail_address
     msg["To"] = ", ".join(to_addresses)

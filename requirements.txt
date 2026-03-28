@@ -3,3 +3,4 @@ langchain-groq
 langgraph
 tavily-python
 python-dotenv
+markdown
