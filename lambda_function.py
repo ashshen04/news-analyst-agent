@@ -1,4 +1,4 @@
-"""Daily runner: analyze all topics and send combined report via email."""
+"""AWS Lambda handler for daily news analysis reports."""
 
 import json
 import time
@@ -9,7 +9,8 @@ from notifier import send_email
 from template import build_report_html
 
 
-def run_daily():
+def lambda_handler(event, context):
+    """AWS Lambda entry point."""
     with open("config.json") as f:
         config = json.load(f)
 
@@ -44,8 +45,11 @@ def run_daily():
     subject = f"Daily News Report — {today}"
 
     send_email(subject, html_body, to_address)
-    print(f"\nAll {len(topics)} topics analyzed and emailed.")
 
-
-if __name__ == "__main__":
-    run_daily()
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "message": f"Report sent for {len(topics)} topics",
+            "date": today,
+        }),
+    }
