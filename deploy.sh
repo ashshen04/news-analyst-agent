@@ -3,6 +3,7 @@
 #
 # Usage: bash deploy.sh <function-name>
 #   e.g.: bash deploy.sh news-analyst-agent
+# latest update on Mar 29 for AWS deployment
 
 set -e
 
