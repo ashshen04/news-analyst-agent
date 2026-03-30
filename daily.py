@@ -5,11 +5,13 @@ import time
 from datetime import date
 
 from graph import graph
+from nodes import llm
 from notifier import send_email
 from template import build_report_html
 
 
 def run_daily():
+    """Core logic: analyze all topics and send email report. Returns summary dict."""
     with open("config.json") as f:
         config = json.load(f)
 
@@ -40,11 +42,13 @@ def run_daily():
         })
         print(f"  Done in {elapsed:.1f}s")
 
-    html_body = build_report_html(today, reports)
+    html_body = build_report_html(today, reports, model=llm.model_name)
     subject = f"Daily News Report — {today}"
 
     send_email(subject, html_body, to_address)
     print(f"\nAll {len(topics)} topics analyzed and emailed.")
+
+    return {"topics": len(topics), "date": today}
 
 
 if __name__ == "__main__":

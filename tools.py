@@ -11,7 +11,7 @@ load_dotenv()
 client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
 
 
-def search_news(topic: str, max_results: int = 10) -> list[dict]:
+def search_news(topic: str, max_results: int = 5) -> list[dict]:
     """Search for news articles on a given topic using Tavily."""
     try:
         response = client.search(

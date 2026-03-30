@@ -5,7 +5,7 @@ import time
 from datetime import date
 
 from dotenv import load_dotenv
-from groq import RateLimitError
+from groq import InternalServerError, RateLimitError
 from langchain_groq import ChatGroq
 
 from state import AgentState
@@ -14,7 +14,7 @@ from tools import search_news
 load_dotenv()
 
 llm = ChatGroq(
-    model="openai/gpt-oss-120b",
+    model="llama-3.3-70b-versatile",
     api_key=os.getenv("GROQ_API_KEY"),
 )
 
@@ -25,7 +25,7 @@ def invoke_with_retry(prompt: str, max_retries: int = 3, wait: float = 10.0) -> 
         try:
             response = llm.invoke(prompt)
             return response.content
-        except RateLimitError:
+        except (RateLimitError, InternalServerError):
             if attempt < max_retries - 1:
                 print(f"  Rate limited, waiting {wait}s before retry...")
                 time.sleep(wait)
