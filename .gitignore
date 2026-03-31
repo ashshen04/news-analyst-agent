@@ -4,3 +4,5 @@ venv/
 *.pyc
 config.json
 output.json
+data/
+*.db

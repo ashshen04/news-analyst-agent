@@ -1,10 +1,13 @@
 """Email notification for daily news reports."""
 
+import logging
 import os
 import smtplib
 from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -26,4 +29,4 @@ def send_email(subject: str, html_body: str, to_addresses: str | list[str]) -> N
         server.login(gmail_address, gmail_password)
         server.send_message(msg)
 
-    print(f"Email sent to {', '.join(to_addresses)}")
+    logger.info("Email sent to %s", ", ".join(to_addresses))

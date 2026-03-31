@@ -1,17 +1,24 @@
 """Node definitions for the news analyst agent graph."""
 
+import logging
 import os
 import time
 from datetime import date
+from pathlib import Path
 
 from dotenv import load_dotenv
 from groq import InternalServerError, RateLimitError
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_groq import ChatGroq
+
+logger = logging.getLogger(__name__)
 
 from state import AgentState
 from tools import search_news
 
 load_dotenv()
+
+SYSTEM_PROMPT = Path(__file__).parent.joinpath("system_prompt.md").read_text()
 
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
@@ -20,23 +27,27 @@ llm = ChatGroq(
 
 
 def invoke_with_retry(prompt: str, max_retries: int = 3, wait: float = 10.0) -> str:
-    """Invoke the LLM with retry on rate limit errors."""
+    """Invoke the LLM with system prompt and retry on errors."""
+    messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]
     for attempt in range(max_retries):
         try:
-            response = llm.invoke(prompt)
+            response = llm.invoke(messages)
             return response.content
-        except (RateLimitError, InternalServerError):
+        except (RateLimitError, InternalServerError) as e:
             if attempt < max_retries - 1:
-                print(f"  Rate limited, waiting {wait}s before retry...")
+                logger.warning("LLM error on attempt %d/%d: %s. Retrying in %.0fs...", attempt + 1, max_retries, e, wait)
                 time.sleep(wait)
             else:
+                logger.error("LLM failed after %d attempts", max_retries)
                 raise
     return ""
 
 
 def fetch_news(state: AgentState) -> dict:
     """Fetch news articles for the given topic."""
+    logger.info("Fetching news for: %s", state["topic"])
     results = search_news(state["topic"])
+    logger.info("Fetched %d articles", len(results))
     return {
         "news_items": results,
         "iterations": state["iterations"] + 1,
@@ -50,9 +61,6 @@ def analyze_news(state: AgentState) -> dict:
         for item in state["news_items"]
     )
     result = invoke_with_retry(
-        "IMPORTANT: You MUST respond in both English AND Simplified Chinese (简体中文). "
-        "Write the English version first, then write '---', then the same content in Chinese.\n"
-        "Use bullet points for stances and viewpoints. Use short paragraphs only for context.\n\n"
         f"Below are news articles about \"{state['topic']}\".\n\n"
         f"{news_text}\n\n"
         "Analyze these articles. Identify the different stances, "
@@ -64,8 +72,6 @@ def analyze_news(state: AgentState) -> dict:
 def find_conflicts(state: AgentState) -> dict:
     """Identify contradictions between different sources."""
     result = invoke_with_retry(
-        "IMPORTANT: You MUST respond in both English AND Simplified Chinese (简体中文). "
-        "Write the English version first, then write '---', then the same content in Chinese.\n\n"
         f"Below is an analysis of news articles about \"{state['topic']}\":\n\n"
         f"{state['analysis']}\n\n"
         "Identify specific contradictions or conflicting claims between "
@@ -84,9 +90,6 @@ def generate_report(state: AgentState) -> dict:
     """Generate a structured final report."""
     conflicts_text = "\n".join(f"- {c}" for c in state["conflicts"])
     result = invoke_with_retry(
-        "IMPORTANT: You MUST respond in both English AND Simplified Chinese (简体中文). "
-        "Write the English version first, then write '---', then the same content in Chinese.\n"
-        "Use bullet points as the primary format. Use short paragraphs only for summaries and conclusions.\n\n"
         f"Topic: {state['topic']}\n\n"
         f"Analysis:\n{state['analysis']}\n\n"
         f"Contradictions found:\n{conflicts_text}\n\n"

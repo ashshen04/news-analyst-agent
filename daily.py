@@ -1,17 +1,24 @@
 """Daily runner: analyze all topics and send combined report via email."""
 
 import json
+import logging
 import time
 from datetime import date
 
+from db import save_report, save_run, update_run_status
 from graph import graph
+from logger import setup_logging
 from nodes import llm
 from notifier import send_email
 from template import build_report_html
 
+logger = logging.getLogger(__name__)
+
 
 def run_daily():
     """Core logic: analyze all topics and send email report. Returns summary dict."""
+    setup_logging()
+
     with open("config.json") as f:
         config = json.load(f)
 
@@ -19,9 +26,12 @@ def run_daily():
     to_address = config["email"]["to"]
     today = date.today().isoformat()
 
+    run_id = save_run(today, len(topics))
+    failed_topics = []
+
     reports = []
     for topic in topics:
-        print(f"Analyzing: {topic}")
+        logger.info("Analyzing: %s", topic)
         state = {
             "messages": [],
             "topic": topic,
@@ -31,24 +41,48 @@ def run_daily():
             "iterations": 0,
             "final_report": "",
         }
-        start = time.time()
-        result = graph.invoke(state)
-        elapsed = time.time() - start
+        try:
+            start = time.time()
+            result = graph.invoke(state)
+            elapsed = time.time() - start
 
-        reports.append({
-            "topic": topic,
-            "final_report": result["final_report"],
-            "elapsed": elapsed,
-        })
-        print(f"  Done in {elapsed:.1f}s")
+            reports.append({
+                "topic": topic,
+                "final_report": result["final_report"],
+                "analysis": result["analysis"],
+                "news_items": result["news_items"],
+                "elapsed": elapsed,
+            })
 
-    html_body = build_report_html(today, reports, model=llm.model_name)
-    subject = f"Daily News Report — {today}"
+            save_report(
+                run_id=run_id,
+                topic=topic,
+                analysis=result["analysis"],
+                final_report=result["final_report"],
+                elapsed=elapsed,
+                news_items=result["news_items"],
+            )
+            logger.info("Done: %s in %.1fs", topic, elapsed)
 
-    send_email(subject, html_body, to_address)
-    print(f"\nAll {len(topics)} topics analyzed and emailed.")
+        except Exception:
+            logger.exception("Failed to analyze topic: %s", topic)
+            failed_topics.append(topic)
 
-    return {"topics": len(topics), "date": today}
+    if failed_topics:
+        update_run_status(run_id, "partial" if reports else "failed")
+
+    if reports:
+        html_body = build_report_html(today, reports, model=llm.model_name)
+        subject = f"Daily News Report — {today}"
+        if failed_topics:
+            subject += f" ({len(failed_topics)} topic(s) failed)"
+        send_email(subject, html_body, to_address)
+
+    if failed_topics:
+        logger.error("Failed topics: %s", ", ".join(failed_topics))
+
+    logger.info("Run complete: %d/%d topics succeeded", len(reports), len(topics))
+    return {"topics": len(reports), "failed": len(failed_topics), "date": today}
 
 
 if __name__ == "__main__":

@@ -1,10 +1,13 @@
 """Tool definitions for the news analyst agent."""
 
+import logging
 import os
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from tavily import TavilyClient
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -30,4 +33,5 @@ def search_news(topic: str, max_results: int = 5) -> list[dict]:
             for item in response.get("results", [])
         ]
     except Exception:
+        logger.exception("Tavily search failed for topic: %s", topic)
         return []

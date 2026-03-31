@@ -4,9 +4,11 @@ import sys
 import time
 
 from graph import graph
+from logger import setup_logging
 
 
 def main():
+    setup_logging()
     if len(sys.argv) > 1:
         topic = " ".join(sys.argv[1:])
     else:

@@ -5,5 +5,6 @@ RUN pip install -r requirements.txt --quiet
 
 COPY *.py .
 COPY config.json .
+COPY system_prompt.md .
 
 CMD ["lambda_function.lambda_handler"]
