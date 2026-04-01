@@ -1,6 +1,9 @@
-langchain
-langchain-groq
-langgraph
-tavily-python
-python-dotenv
-markdown
+langchain==1.2.13
+langchain-groq==1.1.2
+langgraph==1.1.3
+tavily-python==0.7.23
+python-dotenv==1.2.2
+markdown==3.10.2
+groq==0.37.1
+pytest==8.*
+pytest-cov==6.*

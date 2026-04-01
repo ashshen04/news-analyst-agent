@@ -6,3 +6,4 @@ config.json
 output.json
 data/
 *.db
+.pytest_cache/
