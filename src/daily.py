@@ -49,11 +49,16 @@ def run_daily():
     """Core logic: analyze all topics and send email report. Returns summary dict."""
     setup_logging()
 
-    with open("config.json") as f:
-        config = json.load(f)
-
-    topics = config["topics"]
-    to_address = config["email"]["to"]
+    topics_env = os.getenv("TOPICS")
+    email_env = os.getenv("EMAIL_TO")
+    if topics_env and email_env:
+        topics = [t.strip() for t in topics_env.split(",")]
+        to_address = [e.strip() for e in email_env.split(",")]
+    else:
+        with open("config.json") as f:
+            config = json.load(f)
+        topics = config["topics"]
+        to_address = config["email"]["to"]
     today = date.today().isoformat()
 
     run_id = save_run(today, len(topics))

@@ -1,6 +1,20 @@
 """HTML email template for news reports."""
 
+import re
+
 import markdown
+
+_HEADING_STYLES = {
+    "h1": "font-size:18px; font-weight:700; color:#1a1a2e; margin:16px 0 6px;",
+    "h2": "font-size:16px; font-weight:700; color:#1a1a2e; margin:14px 0 5px; border-bottom:1px solid #e0e0e0; padding-bottom:4px;",
+    "h3": "font-size:14px; font-weight:600; color:#333; margin:12px 0 4px;",
+}
+
+
+def _style_headings(html: str) -> str:
+    for tag, style in _HEADING_STYLES.items():
+        html = re.sub(rf"<{tag}(\s[^>]*)?>", f'<{tag} style="{style}">', html)
+    return html
 
 EMAIL_TEMPLATE = """\
 <!DOCTYPE html>
@@ -23,7 +37,7 @@ EMAIL_TEMPLATE = """\
 
 SECTION_TEMPLATE = """\
 <div style="border:1px solid #e0e0e0; border-radius:8px; padding:20px; margin:20px 0; background:#fafafa;">
-  <h2 style="margin:0 0 12px; color:#1a1a2e; font-size:20px; border-bottom:2px solid #e0e0e0; padding-bottom:8px;">{topic}</h2>
+  <h2 style="margin:0 0 12px; color:#1a1a2e; font-size:20px; border-bottom:2px solid #e0e0e0; padding-bottom:8px;">📰 {topic}</h2>
   <div style="line-height:1.7; font-size:14px;">{content}</div>
   <p style="margin:12px 0 0; font-size:12px; color:#999;">Completed in {elapsed:.1f}s</p>
 </div>"""
@@ -36,10 +50,10 @@ def build_report_html(today: str, reports: list[dict], model: str = "") -> str:
     """
     sections = []
     for report in reports:
-        content_html = markdown.markdown(
+        content_html = _style_headings(markdown.markdown(
             report["final_report"],
             extensions=["tables", "nl2br"],
-        )
+        ))
         sections.append(
             SECTION_TEMPLATE.format(
                 topic=report["topic"],
