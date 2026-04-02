@@ -5,9 +5,10 @@ from unittest.mock import MagicMock, patch
 
 
 class TestRunDaily:
+    @patch("daily.archive_to_s3")
     @patch("daily.send_email")
     @patch("daily.graph")
-    def test_full_run(self, mock_graph, mock_email, tmp_db, tmp_path):
+    def test_full_run(self, mock_graph, mock_email, mock_s3, tmp_db, tmp_path):
         """Simulate a complete daily run with mocked graph and email."""
         # Prepare config
         config = {
@@ -33,9 +34,10 @@ class TestRunDaily:
         assert result["failed"] == 0
         mock_email.assert_called_once()
 
+    @patch("daily.archive_to_s3")
     @patch("daily.send_email")
     @patch("daily.graph")
-    def test_handles_topic_failure(self, mock_graph, mock_email, tmp_db, tmp_path):
+    def test_handles_topic_failure(self, mock_graph, mock_email, mock_s3, tmp_db, tmp_path):
         """One failing topic should not crash the entire run."""
         config = {
             "topics": ["AI", "Market"],
