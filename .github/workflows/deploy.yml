@@ -70,14 +70,8 @@ jobs:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          aws lambda update-function-configuration \
-            --function-name news-analyst-agent \
-            --architectures arm64 \
-            --region us-east-2
-          aws lambda wait function-updated \
-            --function-name news-analyst-agent \
-            --region us-east-2
           aws lambda update-function-code \
             --function-name news-analyst-agent \
             --image-uri $ECR_REGISTRY/news-analyst-agent:$IMAGE_TAG \
+            --architectures arm64 \
             --region us-east-2
