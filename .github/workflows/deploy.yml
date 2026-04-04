@@ -60,6 +60,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker buildx build --platform linux/arm64 \
+            --provenance=false \
             -t $ECR_REGISTRY/news-analyst-agent:$IMAGE_TAG \
             -t $ECR_REGISTRY/news-analyst-agent:latest \
             --push .
