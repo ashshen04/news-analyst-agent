@@ -4,10 +4,13 @@ from unittest.mock import patch
 
 
 class TestRunDaily:
+    @patch("daily.add_report")
+    @patch("daily.evolve_prompt", return_value=False)
+    @patch("daily.collect_feedback", return_value=0)
     @patch("daily.archive_to_s3")
     @patch("daily.send_email")
     @patch("daily.graph")
-    def test_full_run(self, mock_graph, mock_email, mock_s3, tmp_db, monkeypatch):
+    def test_full_run(self, mock_graph, mock_email, mock_s3, mock_collect, mock_evolve, mock_add, tmp_db, monkeypatch):
         """Simulate a complete daily run with mocked graph and email."""
         monkeypatch.setenv("TOPICS", "AI")
         monkeypatch.setenv("EMAIL_TO", "test@example.com")
@@ -24,12 +27,16 @@ class TestRunDaily:
 
         assert result["topics"] == 1
         assert result["failed"] == 0
+        assert result["feedback_collected"] == 0
         mock_email.assert_called_once()
 
+    @patch("daily.add_report")
+    @patch("daily.evolve_prompt", return_value=False)
+    @patch("daily.collect_feedback", return_value=0)
     @patch("daily.archive_to_s3")
     @patch("daily.send_email")
     @patch("daily.graph")
-    def test_handles_topic_failure(self, mock_graph, mock_email, mock_s3, tmp_db, monkeypatch):
+    def test_handles_topic_failure(self, mock_graph, mock_email, mock_s3, mock_collect, mock_evolve, mock_add, tmp_db, monkeypatch):
         """One failing topic should not crash the entire run."""
         monkeypatch.setenv("TOPICS", "AI,Market")
         monkeypatch.setenv("EMAIL_TO", "test@example.com")
@@ -49,3 +56,47 @@ class TestRunDaily:
 
         assert result["topics"] == 1
         assert result["failed"] == 1
+
+    @patch("daily.add_report")
+    @patch("daily.evolve_prompt", return_value=False)
+    @patch("daily.collect_feedback", return_value=2)
+    @patch("daily.archive_to_s3")
+    @patch("daily.send_email")
+    @patch("daily.graph")
+    def test_feedback_collected_before_report(self, mock_graph, mock_email, mock_s3, mock_collect, mock_evolve, mock_add, tmp_db, monkeypatch):
+        """collect_feedback and evolve_prompt must be called before graph.invoke."""
+        monkeypatch.setenv("TOPICS", "AI")
+        monkeypatch.setenv("EMAIL_TO", "test@example.com")
+        call_order = []
+        mock_collect.side_effect = lambda **kw: call_order.append("collect") or 2
+        mock_evolve.side_effect = lambda: call_order.append("evolve") or False
+        mock_graph.invoke.side_effect = lambda s: call_order.append("graph") or {
+            "final_report": "R", "analysis": "A", "news_items": [],
+        }
+
+        from daily import run_daily
+        result = run_daily()
+
+        assert call_order.index("collect") < call_order.index("graph")
+        assert call_order.index("evolve") < call_order.index("graph")
+        assert result["feedback_collected"] == 2
+
+    @patch("daily.add_report")
+    @patch("daily.evolve_prompt", return_value=False)
+    @patch("daily.collect_feedback", return_value=0)
+    @patch("daily.archive_to_s3")
+    @patch("daily.send_email")
+    @patch("daily.graph")
+    def test_add_report_called_after_save(self, mock_graph, mock_email, mock_s3, mock_collect, mock_evolve, mock_add, tmp_db, monkeypatch):
+        """add_report must be called once per successful topic."""
+        monkeypatch.setenv("TOPICS", "AI")
+        monkeypatch.setenv("EMAIL_TO", "test@example.com")
+
+        mock_graph.invoke.return_value = {
+            "final_report": "Report", "analysis": "Analysis", "news_items": [],
+        }
+
+        from daily import run_daily
+        run_daily()
+
+        mock_add.assert_called_once()

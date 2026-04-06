@@ -18,7 +18,17 @@ from tools import search_news
 
 load_dotenv()
 
-SYSTEM_PROMPT = Path(__file__).parent.joinpath("system_prompt.md").read_text()
+_PREFS_PATH = Path(__file__).parent / "user_preferences.md"
+
+
+def _load_system_prompt() -> str:
+    base = Path(__file__).parent.joinpath("system_prompt.md").read_text()
+    if _PREFS_PATH.exists():
+        prefs = _PREFS_PATH.read_text().strip()
+        if prefs:
+            return base + "\n\n# User Preferences\n" + prefs
+    return base
+
 
 llm = ChatGroq(
     model="llama-3.3-70b-versatile",
@@ -28,7 +38,7 @@ llm = ChatGroq(
 
 def invoke_with_retry(prompt: str, max_retries: int = 3, wait: float = 10.0) -> str:
     """Invoke the LLM with system prompt and retry on errors."""
-    messages = [SystemMessage(content=SYSTEM_PROMPT), HumanMessage(content=prompt)]
+    messages = [SystemMessage(content=_load_system_prompt()), HumanMessage(content=prompt)]
     for attempt in range(max_retries):
         try:
             response = llm.invoke(messages)
@@ -87,9 +97,29 @@ def find_conflicts(state: AgentState) -> dict:
 
 
 def generate_report(state: AgentState) -> dict:
-    """Generate a structured final report."""
+    """Generate a structured final report, optionally with RAG-retrieved style examples."""
+    from rag import retrieve_examples
+
+    examples = retrieve_examples(query_text=state["analysis"], top_k=2, min_rating=4)
+
+    few_shot_prefix = ""
+    if examples:
+        parts = []
+        for ex in examples:
+            parts.append(
+                f"### Past Report on '{ex['topic']}' (Rating: {ex['rating']}/5, {ex['run_date']})\n"
+                f"{ex['final_report']}"
+            )
+        few_shot_prefix = (
+            "## Well-Received Past Reports — Use as style/structure reference:\n\n"
+            + "\n\n---\n\n".join(parts)
+            + "\n\n---\n\n"
+        )
+        logger.info("Injecting %d RAG example(s) for topic: %s", len(examples), state["topic"])
+
     conflicts_text = "\n".join(f"- {c}" for c in state["conflicts"])
     result = invoke_with_retry(
+        f"{few_shot_prefix}"
         f"Topic: {state['topic']}\n\n"
         f"Analysis:\n{state['analysis']}\n\n"
         f"Contradictions found:\n{conflicts_text}\n\n"

@@ -4,6 +4,8 @@ venv/
 *.pyc
 config.json
 output.json
+response.json
 data/
 *.db
 .pytest_cache/
+src/user_preferences.md

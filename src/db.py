@@ -37,6 +37,27 @@ CREATE TABLE IF NOT EXISTS news_items (
 CREATE INDEX IF NOT EXISTS idx_reports_topic ON reports(topic);
 CREATE INDEX IF NOT EXISTS idx_reports_run ON reports(run_id);
 CREATE INDEX IF NOT EXISTS idx_news_report ON news_items(report_id);
+
+CREATE TABLE IF NOT EXISTS feedback (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    report_id        INTEGER REFERENCES reports(id) ON DELETE SET NULL,
+    run_date         TEXT NOT NULL,
+    topic            TEXT NOT NULL,
+    rating           INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+    comment          TEXT,
+    email_message_id TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS prompt_synthesis_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    synthesized_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    feedback_count  INTEGER NOT NULL,
+    summary         TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_topic    ON feedback(topic);
+CREATE INDEX IF NOT EXISTS idx_feedback_run_date ON feedback(run_date);
 """
 
 
@@ -132,3 +153,91 @@ def get_run_history(limit: int = 30) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def save_feedback(
+    run_date: str,
+    topic: str,
+    rating: int,
+    comment: str | None = None,
+    email_message_id: str | None = None,
+) -> int:
+    """Insert a feedback record, auto-linking to the most recent report for (run_date, topic).
+    Returns the new feedback row ID."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT r.id FROM reports r "
+        "JOIN runs ru ON r.run_id = ru.id "
+        "WHERE ru.run_date = ? AND r.topic = ? "
+        "ORDER BY r.created_at DESC LIMIT 1",
+        (run_date, topic),
+    ).fetchone()
+    report_id = row["id"] if row else None
+
+    cursor = conn.execute(
+        "INSERT INTO feedback (report_id, run_date, topic, rating, comment, email_message_id) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (report_id, run_date, topic, rating, comment, email_message_id),
+    )
+    conn.commit()
+    fid = cursor.lastrowid
+    conn.close()
+    return fid
+
+
+def get_feedback_ratings(report_ids: list[int]) -> dict[int, int]:
+    """Return {report_id: rating} for a list of report IDs. Used by RAG to filter by quality."""
+    if not report_ids:
+        return {}
+    conn = get_connection()
+    placeholders = ",".join("?" * len(report_ids))
+    rows = conn.execute(
+        f"SELECT report_id, MAX(rating) as rating FROM feedback "
+        f"WHERE report_id IN ({placeholders}) AND report_id IS NOT NULL "
+        f"GROUP BY report_id",
+        report_ids,
+    ).fetchall()
+    conn.close()
+    return {row["report_id"]: row["rating"] for row in rows}
+
+
+def get_recent_feedback(limit: int = 20) -> list[dict]:
+    """Return the most recent feedback items with non-empty comments, newest first."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT topic, rating, comment, run_date, created_at "
+        "FROM feedback "
+        "WHERE comment IS NOT NULL AND comment != '' "
+        "ORDER BY created_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def count_feedback_since_last_synthesis() -> int:
+    """Return number of feedback rows created since the last prompt synthesis run."""
+    conn = get_connection()
+    last = conn.execute(
+        "SELECT synthesized_at FROM prompt_synthesis_log ORDER BY synthesized_at DESC LIMIT 1"
+    ).fetchone()
+    if last is None:
+        count = conn.execute("SELECT COUNT(*) FROM feedback").fetchone()[0]
+    else:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM feedback WHERE created_at > ?",
+            (last["synthesized_at"],),
+        ).fetchone()[0]
+    conn.close()
+    return count
+
+
+def save_synthesis_log(feedback_count: int, summary: str) -> None:
+    """Record a completed prompt synthesis run."""
+    conn = get_connection()
+    conn.execute(
+        "INSERT INTO prompt_synthesis_log (feedback_count, summary) VALUES (?, ?)",
+        (feedback_count, summary),
+    )
+    conn.commit()
+    conn.close()

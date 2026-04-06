@@ -1,6 +1,6 @@
 """Tests for nodes.py — LLM node functions with mocked Groq."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -70,5 +70,27 @@ class TestFindConflicts:
 
 class TestGenerateReport:
     def test_returns_report(self, mock_llm, sample_state):
-        result = generate_report(sample_state)
+        with patch("rag.retrieve_examples", return_value=[]):
+            result = generate_report(sample_state)
         assert result["final_report"] == "Mocked LLM response."
+
+    def test_injects_rag_examples_into_prompt(self, mock_llm, sample_state):
+        fake_example = {
+            "final_report": "## Executive Summary\nSample past report.",
+            "topic": "AI Trends",
+            "rating": 5,
+            "run_date": "2026-04-01",
+        }
+        with patch("rag.retrieve_examples", return_value=[fake_example]):
+            generate_report(sample_state)
+        call_args = mock_llm.call_args[0][0]
+        prompt_text = str(call_args)
+        assert "Well-Received Past Reports" in prompt_text
+        assert "AI Trends" in prompt_text
+
+    def test_no_prefix_when_no_examples(self, mock_llm, sample_state):
+        with patch("rag.retrieve_examples", return_value=[]):
+            generate_report(sample_state)
+        call_args = mock_llm.call_args[0][0]
+        prompt_text = str(call_args)
+        assert "Well-Received Past Reports" not in prompt_text
