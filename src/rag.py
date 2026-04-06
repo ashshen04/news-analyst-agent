@@ -11,7 +11,7 @@ from fastembed import TextEmbedding
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = "nomic-embed-text-v1.5"
+MODEL_NAME = "nomic-ai/nomic-embed-text-v1.5"
 
 _embedder: TextEmbedding | None = None
 
