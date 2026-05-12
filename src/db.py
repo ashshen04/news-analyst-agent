@@ -186,7 +186,7 @@ def save_feedback(
 
 
 def get_feedback_ratings(report_ids: list[int]) -> dict[int, int]:
-    """Return {report_id: rating} for a list of report IDs. Used by RAG to filter by quality."""
+    """Return {report_id: rating} for a list of report IDs."""
     if not report_ids:
         return {}
     conn = get_connection()

@@ -15,7 +15,6 @@ from logger import setup_logging
 from nodes import llm
 from notifier import send_email
 from prompt_evolver import evolve_prompt
-from rag import add_report
 from template import build_report_html
 
 logger = logging.getLogger(__name__)
@@ -64,8 +63,15 @@ def run_daily():
         to_address = config["email"]["to"]
     today = date.today().isoformat()
 
-    new_feedback_count = collect_feedback(known_topics=topics, lookback_days=7)
-    evolve_prompt()
+    try:
+        new_feedback_count = collect_feedback(known_topics=topics, lookback_days=7)
+    except Exception:
+        logger.exception("Feedback collection failed — continuing")
+        new_feedback_count = 0
+    try:
+        evolve_prompt()
+    except Exception:
+        logger.exception("Prompt evolution failed — continuing")
 
     run_id = save_run(today, len(topics))
     failed_topics = []
@@ -95,19 +101,13 @@ def run_daily():
                 "elapsed": elapsed,
             })
 
-            report_id = save_report(
+            save_report(
                 run_id=run_id,
                 topic=topic,
                 analysis=result["analysis"],
                 final_report=result["final_report"],
                 elapsed=elapsed,
                 news_items=result["news_items"],
-            )
-            add_report(
-                report_id=report_id,
-                topic=topic,
-                run_date=today,
-                text=result["final_report"],
             )
             logger.info("Done: %s in %.1fs", topic, elapsed)
 

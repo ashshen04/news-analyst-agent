@@ -97,29 +97,9 @@ def find_conflicts(state: AgentState) -> dict:
 
 
 def generate_report(state: AgentState) -> dict:
-    """Generate a structured final report, optionally with RAG-retrieved style examples."""
-    from rag import retrieve_examples
-
-    examples = retrieve_examples(query_text=state["analysis"], top_k=2, min_rating=4)
-
-    few_shot_prefix = ""
-    if examples:
-        parts = []
-        for ex in examples:
-            parts.append(
-                f"### Past Report on '{ex['topic']}' (Rating: {ex['rating']}/5, {ex['run_date']})\n"
-                f"{ex['final_report']}"
-            )
-        few_shot_prefix = (
-            "## Well-Received Past Reports — Use as style/structure reference:\n\n"
-            + "\n\n---\n\n".join(parts)
-            + "\n\n---\n\n"
-        )
-        logger.info("Injecting %d RAG example(s) for topic: %s", len(examples), state["topic"])
-
+    """Generate a structured final report."""
     conflicts_text = "\n".join(f"- {c}" for c in state["conflicts"])
     result = invoke_with_retry(
-        f"{few_shot_prefix}"
         f"Topic: {state['topic']}\n\n"
         f"Analysis:\n{state['analysis']}\n\n"
         f"Contradictions found:\n{conflicts_text}\n\n"
