@@ -87,6 +87,7 @@ def run_daily():
             "conflicts": [],
             "iterations": 0,
             "final_report": "",
+            "digest": "",
         }
         try:
             start = time.time()
@@ -108,6 +109,7 @@ def run_daily():
                 final_report=result["final_report"],
                 elapsed=elapsed,
                 news_items=result["news_items"],
+                digest=result.get("digest", ""),
             )
             logger.info("Done: %s in %.1fs", topic, elapsed)
 

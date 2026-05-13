@@ -1,6 +1,8 @@
 """SQLite database layer for storing news analysis reports."""
 
+import hashlib
 import os
+import re
 import sqlite3
 from pathlib import Path
 
@@ -19,6 +21,7 @@ CREATE TABLE IF NOT EXISTS reports (
     topic        TEXT NOT NULL,
     analysis     TEXT,
     final_report TEXT NOT NULL,
+    digest       TEXT,
     elapsed      REAL NOT NULL,
     news_count   INTEGER NOT NULL DEFAULT 0,
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
@@ -31,12 +34,14 @@ CREATE TABLE IF NOT EXISTS news_items (
     url          TEXT NOT NULL,
     source       TEXT NOT NULL,
     content      TEXT,
+    title_hash   TEXT,
     fetched_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_reports_topic ON reports(topic);
 CREATE INDEX IF NOT EXISTS idx_reports_run ON reports(run_id);
 CREATE INDEX IF NOT EXISTS idx_news_report ON news_items(report_id);
+CREATE INDEX IF NOT EXISTS idx_news_url ON news_items(url);
 
 CREATE TABLE IF NOT EXISTS feedback (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -60,6 +65,18 @@ CREATE INDEX IF NOT EXISTS idx_feedback_topic    ON feedback(topic);
 CREATE INDEX IF NOT EXISTS idx_feedback_run_date ON feedback(run_date);
 """
 
+_MIGRATIONS = [
+    "ALTER TABLE reports ADD COLUMN digest TEXT",
+    "ALTER TABLE news_items ADD COLUMN title_hash TEXT",
+    "CREATE INDEX IF NOT EXISTS idx_news_title_hash ON news_items(title_hash)",
+]
+
+
+def title_hash(title: str) -> str:
+    """Hash a title after stripping non-word chars and lowercasing — used for fuzzy dedup."""
+    normalized = re.sub(r"\W+", "", (title or "").lower())
+    return hashlib.md5(normalized.encode()).hexdigest()
+
 
 def get_db_path() -> str:
     """Return DB path: /tmp/ on Lambda, ./data/ locally."""
@@ -77,6 +94,11 @@ def get_connection() -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row
     conn.executescript(_CREATE_TABLES)
+    for stmt in _MIGRATIONS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError:
+            pass
     return conn
 
 
@@ -108,22 +130,24 @@ def save_report(
     final_report: str,
     elapsed: float,
     news_items: list[dict],
+    digest: str = "",
 ) -> int:
     """Insert a report and its news items. Returns report ID."""
     conn = get_connection()
     cursor = conn.execute(
-        "INSERT INTO reports (run_id, topic, analysis, final_report, elapsed, news_count) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
-        (run_id, topic, analysis, final_report, elapsed, len(news_items)),
+        "INSERT INTO reports (run_id, topic, analysis, final_report, digest, elapsed, news_count) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (run_id, topic, analysis, final_report, digest, elapsed, len(news_items)),
     )
     report_id = cursor.lastrowid
 
     for item in news_items:
+        title = item.get("title", "")
         conn.execute(
-            "INSERT INTO news_items (report_id, title, url, source, content) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (report_id, item.get("title", ""), item.get("url", ""),
-             item.get("source", ""), item.get("content", "")),
+            "INSERT INTO news_items (report_id, title, url, source, content, title_hash) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (report_id, title, item.get("url", ""),
+             item.get("source", ""), item.get("content", ""), title_hash(title)),
         )
 
     conn.commit()
@@ -142,6 +166,33 @@ def get_recent_reports(topic: str, limit: int = 7) -> list[dict]:
     ).fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def get_latest_digest(topic: str) -> str | None:
+    """Return the most recent non-empty digest for a topic, or None."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT digest FROM reports "
+        "WHERE topic = ? AND digest IS NOT NULL AND digest != '' "
+        "ORDER BY id DESC LIMIT 1",
+        (topic,),
+    ).fetchone()
+    conn.close()
+    return row["digest"] if row else None
+
+
+def get_seen_fingerprints(days: int = 7) -> tuple[set[str], set[str]]:
+    """Return (urls, title_hashes) seen in news_items within the last N days."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT url, title_hash FROM news_items "
+        "WHERE fetched_at > datetime('now', ?)",
+        (f"-{int(days)} days",),
+    ).fetchall()
+    conn.close()
+    urls = {r["url"] for r in rows if r["url"]}
+    hashes = {r["title_hash"] for r in rows if r["title_hash"]}
+    return urls, hashes
 
 
 def get_run_history(limit: int = 30) -> list[dict]:
