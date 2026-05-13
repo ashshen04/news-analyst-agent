@@ -13,6 +13,7 @@ from langchain_groq import ChatGroq
 
 logger = logging.getLogger(__name__)
 
+from db import get_latest_digest, get_seen_fingerprints, title_hash
 from state import AgentState
 from tools import search_news
 
@@ -54,10 +55,22 @@ def invoke_with_retry(prompt: str, max_retries: int = 3, wait: float = 10.0) -> 
 
 
 def fetch_news(state: AgentState) -> dict:
-    """Fetch news articles for the given topic."""
+    """Fetch news articles for the given topic, dropping ones we've already analyzed recently."""
     logger.info("Fetching news for: %s", state["topic"])
     results = search_news(state["topic"])
-    logger.info("Fetched %d articles", len(results))
+    raw_count = len(results)
+
+    try:
+        seen_urls, seen_hashes = get_seen_fingerprints(days=7)
+        results = [
+            item for item in results
+            if item.get("url") not in seen_urls
+            and title_hash(item.get("title", "")) not in seen_hashes
+        ]
+    except Exception:
+        logger.exception("Dedup lookup failed — proceeding with unfiltered results")
+
+    logger.info("Fetched %d articles (%d after dedup)", raw_count, len(results))
     return {
         "news_items": results,
         "iterations": state["iterations"] + 1,
@@ -99,7 +112,23 @@ def find_conflicts(state: AgentState) -> dict:
 def generate_report(state: AgentState) -> dict:
     """Generate a structured final report."""
     conflicts_text = "\n".join(f"- {c}" for c in state["conflicts"])
+
+    prior_block = ""
+    try:
+        prior = get_latest_digest(state["topic"])
+    except Exception:
+        logger.exception("Prior digest lookup failed — proceeding without memory")
+        prior = None
+    if prior:
+        prior_block = (
+            f"<previous_day_digest>\n{prior}\n</previous_day_digest>\n\n"
+            "The above is the digest of the most recent prior report on this topic. "
+            "Focus your report on what is NEW today; do not restate points already covered. "
+            "If today's news confirms or contradicts the prior digest, say so explicitly.\n\n"
+        )
+
     result = invoke_with_retry(
+        f"{prior_block}"
         f"Topic: {state['topic']}\n\n"
         f"Analysis:\n{state['analysis']}\n\n"
         f"Contradictions found:\n{conflicts_text}\n\n"
@@ -112,3 +141,17 @@ def generate_report(state: AgentState) -> dict:
         "Include the report date and note the recency of the news sources."
     )
     return {"final_report": result}
+
+
+def summarize_for_memory(state: AgentState) -> dict:
+    """Compress today's final report into a ~100-word digest for tomorrow's run."""
+    if not state.get("final_report"):
+        return {"digest": ""}
+    result = invoke_with_retry(
+        "Compress the following report into a digest of at most 100 words for use as memory "
+        "tomorrow. Keep only: key entities, decisions, claims, numbers, and unresolved "
+        "questions. No headings, no flowery prose, no restatement of the topic. Plain prose, "
+        "one paragraph.\n\n"
+        f"{state['final_report']}"
+    )
+    return {"digest": result.strip()}

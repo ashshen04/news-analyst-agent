@@ -15,3 +15,4 @@ class AgentState(TypedDict):
     conflicts: list[str]
     iterations: int
     final_report: str
+    digest: str
